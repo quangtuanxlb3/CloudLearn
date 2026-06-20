@@ -1,50 +1,105 @@
-// User profile service. Mock now, API-ready later.
+import { supabase } from "@/lib/supabase";
 
-import { mockUser } from "@/lib/mockData";
-import { delay /*, request, API_ENDPOINTS */ } from "./apiClient";
-
-// In-memory copy that mock mutations write to.
-let currentUser = { ...mockUser };
+let currentUser = null;
 
 export function setCurrentUser(user) {
-  currentUser = { ...user };
+  currentUser = user;
 }
 
 /**
- * GET /api/users/me
+ * Lấy thông tin người dùng hiện tại
  */
 export async function getCurrentUser() {
-  // Real: return request(API_ENDPOINTS.CURRENT_USER);
-  await delay(400);
-  return { ...currentUser };
+
+  if (currentUser) {
+    return currentUser;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  currentUser = data;
+
+  return data;
 }
 
 /**
- * PUT /api/users/me
- * @param {{ fullName?: string, email?: string, role?: string, institution?: string }} updates
+ * Cập nhật hồ sơ
  */
 export async function updateProfile(updates) {
-  // Real: return request(API_ENDPOINTS.UPDATE_USER, { method: "PUT", body: updates });
-  await delay();
-  currentUser = { ...currentUser, ...updates };
-  return { ...currentUser };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Bạn chưa đăng nhập.");
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({
+
+      full_name: updates.fullName,
+
+      email: updates.email,
+
+      role: updates.role,
+
+      institution: updates.institution,
+
+    })
+    .eq("id", user.id)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  currentUser = data;
+
+  return data;
 }
 
 /**
- * PUT /api/users/change-password
- * Passwords are only handled here at call time, never persisted in app state.
+ * Đổi mật khẩu
  */
-export async function changePassword({ currentPassword, newPassword }) {
-  // Real: return request(API_ENDPOINTS.CHANGE_PASSWORD, { method: "PUT", body: { currentPassword, newPassword } });
-  await delay();
+export async function changePassword({
+  currentPassword,
+  newPassword,
+}) {
 
-  if (!currentPassword || !newPassword) {
-    throw new Error("Vui lòng nhập cả mật khẩu hiện tại và mật khẩu mới.");
-  }
-  // Mock check: pretend the demo account's current password is "password123".
-  if (currentPassword !== "password123") {
-    throw new Error("Mật khẩu hiện tại không đúng.");
+  if (!newPassword) {
+    throw new Error("Vui lòng nhập mật khẩu mới.");
   }
 
-  return { success: true };
+  const { error } = await supabase.auth.updateUser({
+
+    password: newPassword,
+
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    success: true,
+  };
 }

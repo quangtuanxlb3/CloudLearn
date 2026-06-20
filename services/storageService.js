@@ -1,24 +1,68 @@
-// Cloud storage + documents service. Mock now, API-ready later.
-
-import { mockStorageUsage } from "@/lib/mockData";
-import { delay /*, request, API_ENDPOINTS */ } from "./apiClient";
-import { getDocuments as getMockDocuments } from "./documentService";
+import { supabase } from "@/lib/supabase";
+import { getDocuments as getSupabaseDocuments } from "./documentService";
 
 /**
- * GET /api/storage/usage
- * @returns {Promise<{ usedGB, limitGB, documentCount, folderCount }>}
+ * Lấy thông tin dung lượng storage
  */
 export async function getStorageUsage() {
-  // Real: return request(API_ENDPOINTS.STORAGE_USAGE);
-  await delay(400);
-  return { ...mockStorageUsage };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      usedGB: 0,
+      limitGB: 2,
+      documentCount: 0,
+      folderCount: 0,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("documents")
+    .select("file_size")
+    .eq("owner_id", user.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const totalBytes =
+    data?.reduce((sum, item) => sum + (item.file_size || 0), 0) || 0;
+
+  const usedGB = Number(
+    (totalBytes / (1024 * 1024 * 1024)).toFixed(2)
+  );
+
+  return {
+
+    usedGB,
+
+    limitGB: 2,
+
+    documentCount: data?.length || 0,
+
+    folderCount: 1,
+
+  };
 }
 
 /**
- * GET /api/documents
- * Placeholder for the future document management module.
+ * Lấy danh sách tài liệu
  */
 export async function getDocuments() {
-  // Real: return request(API_ENDPOINTS.DOCUMENTS);
-  return getMockDocuments();
+  return getSupabaseDocuments();
+}
+
+export async function getCloudStorageConfig() {
+  return {
+    provider: "Supabase",
+    bucketName: "documents",
+    region: "Supabase Cloud",
+    accessPattern: "Supabase Storage",
+    encryption: "AES-256",
+    versioning: "Enabled",
+    lifecycle: "Keep forever",
+  };
 }

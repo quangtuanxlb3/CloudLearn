@@ -5,6 +5,7 @@ import { API_ENDPOINTS, USER_ROLES } from "@/constants";
 import { mockCredentials, mockUser } from "@/lib/mockData";
 import { clearAuthToken, delay, setAuthToken /*, request, USE_MOCK */ } from "./apiClient";
 import { setCurrentUser } from "./userService";
+import { supabase } from "@/lib/supabase";
 
 function makeToken() {
   return `mock.${Math.random().toString(36).slice(2)}.${Date.now()}`;
@@ -15,54 +16,80 @@ function makeToken() {
  * @returns {Promise<{ user: object, token: string }>}
  */
 export async function loginUser({ email, password }) {
-  // Real: return request(API_ENDPOINTS.LOGIN, { method: "POST", body: { email, password } });
-  await delay();
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
 
-  const match = mockCredentials.find(
-    (cred) => cred.email === email.trim().toLowerCase() && cred.password === password
-  );
-
-  if (!match) {
-    throw new Error("Email hoặc mật khẩu không đúng. Vui lòng thử lại.");
+  if (error) {
+    throw new Error(error.message);
   }
 
-  const token = makeToken();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", data.user.id)
+    .single();
+
+  const token = data.session.access_token;
+
   setAuthToken(token);
-  const user = { ...mockUser, email: email.trim().toLowerCase() };
-  setCurrentUser(user);
-  return { user, token };
+  setCurrentUser(profile);
+
+  return {
+    user: profile,
+    token,
+  };
 }
 
 /**
  * POST /api/auth/register
  * @returns {Promise<{ user: object, token: string }>}
  */
-export async function registerUser({ fullName, email, password }) {
-  // Real: return request(API_ENDPOINTS.REGISTER, { method: "POST", body: { fullName, email, password } });
-  await delay();
+export async function registerUser({
+  fullName,
+  email,
+  password,
+}) {
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim().toLowerCase(),
+    password,
+  });
 
-  const normalizedEmail = email.trim().toLowerCase();
-
-  if (mockCredentials.some((cred) => cred.email === normalizedEmail)) {
-    throw new Error("Email này đã được dùng để tạo tài khoản.");
+  if (error) {
+    throw new Error(error.message);
   }
 
-  mockCredentials.push({ email: normalizedEmail, password });
+  if (!data.user) {
+    throw new Error("Không thể tạo tài khoản.");
+  }
 
-  const token = makeToken();
+  await supabase.from("profiles").upsert({
+    id: data.user.id,
+    full_name: fullName,
+    email: email.trim().toLowerCase(),
+    role: USER_ROLES.STUDENT,
+    storage_used_gb: 0,
+  });
+
+  const token = data.session?.access_token ?? "";
+
   setAuthToken(token);
 
   const user = {
-    ...mockUser,
-    id: `usr_${Math.random().toString(36).slice(2, 8)}`,
-    fullName: fullName.trim(),
-    email: normalizedEmail,
+    id: data.user.id,
+    full_name: fullName,
+    email,
     role: USER_ROLES.STUDENT,
-    storageUsedGB: 0,
+    storage_used_gb: 0,
   };
 
   setCurrentUser(user);
-  return { user, token };
+
+  return {
+    user,
+    token,
+  };
 }
 
 /**
@@ -78,7 +105,7 @@ export async function socialLogin(provider) {
 }
 
 export async function logoutUser() {
-  // Real: await request("/api/auth/logout", { method: "POST" });
+  await supabase.auth.signOut();
   clearAuthToken();
 }
 

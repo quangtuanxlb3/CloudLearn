@@ -2,10 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AWS_STORAGE_CONFIG } from "@/constants";
-import { getCloudStorageConfig, getDocuments, uploadDocument } from "@/services/documentService";
+import { getDocuments, uploadDocument } from "@/services/documentService";
+
+import { getCloudStorageConfig } from "@/services/storageService";
 
 const MAX_FILE_SIZE_MB = 100;
-const STORAGE_CLASSES = ["S3 Standard", "S3 Standard-IA", "S3 One Zone-IA"];
+const STORAGE_CLASSES = [
+
+    "Standard",
+
+    "Private",
+
+    "Public",
+
+];
 
 export default function DocumentManager() {
   const [documents, setDocuments] = useState([]);
@@ -14,7 +24,7 @@ export default function DocumentManager() {
   const [metadata, setMetadata] = useState({
     course: "Điện toán đám mây",
     folder: "Bài tập lớn",
-    storageClass: "S3 Standard",
+    storageClass: "Standard",
   });
   const [progress, setProgress] = useState(0);
   const [isUploading, setUploading] = useState(false);
@@ -24,25 +34,31 @@ export default function DocumentManager() {
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([getDocuments(), getCloudStorageConfig()]).then(([docs, config]) => {
-      if (!isMounted) return;
-      setDocuments(docs);
-      setCloudConfig(config);
-    });
+    Promise.all([getDocuments(), getCloudStorageConfig()]).then(
+      ([docs, config]) => {
+        if (!isMounted) return;
+        setDocuments(docs);
+        setCloudConfig(config);
+      },
+    );
 
     return () => {
       isMounted = false;
     };
   }, []);
 
-  const totalSize = useMemo(
-    () => documents.reduce((sum, item) => sum + Number(item.sizeMB || 0), 0).toFixed(2),
-    [documents]
-  );
+  const totalSize = useMemo(() => {
+    return documents
+      .reduce((sum, item) => sum + Number(item.sizeMB || 0), 0)
+      .toFixed(2);
+  }, [documents]);
 
   function updateMetadata(event) {
     const { name, value } = event.target;
-    setMetadata((current) => ({ ...current, [name]: value }));
+    setMetadata((current) => ({
+    ...current,
+    [name]: value,
+    }));
     setStatus("");
     setError("");
   }
@@ -78,12 +94,18 @@ export default function DocumentManager() {
     try {
       setUploading(true);
       setError("");
-      setStatus("Đang tạo presigned URL và tải lên AWS S3...");
-      const uploaded = await uploadDocument(selectedFile, metadata, setProgress);
+      setStatus("Đang tạo presigned URL và tải lên Supabase...");
+      const uploaded = await uploadDocument(
+        selectedFile,
+        metadata,
+        setProgress,
+      );
       setDocuments((current) => [uploaded, ...current]);
       setSelectedFile(null);
       setStatus("Tải lên thành công. Metadata đã được lưu vào hệ thống.");
-      event.currentTarget.reset();
+      if (event.currentTarget) {
+        event.currentTarget.reset();
+      }
     } catch (uploadError) {
       setError(uploadError.message || "Không thể tải tệp lên.");
     } finally {
@@ -95,21 +117,25 @@ export default function DocumentManager() {
     <section className="space-y-6 xl:col-span-3">
       <div className="rounded-[28px] border border-apple-hairline bg-white p-6 shadow-sm">
         <p className="text-sm font-bold uppercase tracking-wide text-apple-primary">
-          AWS document pipeline
+          Supabase Storage
         </p>
         <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-apple-text">Quản lý tài liệu học tập</h2>
+            <h2 className="text-2xl font-bold text-apple-text">
+              Quản lý tài liệu học tập
+            </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-apple-muted">
-              Mô phỏng luồng tải tài liệu lên AWS S3 cho môn Điện toán đám mây tại
-              Đại học GTVT TP HCM.
+              Mô phỏng luồng tải tài liệu lên Supabase cho môn Điện toán đám mây
+              tại Đại học GTVT TP HCM.
             </p>
           </div>
           <div className="rounded-3xl bg-apple-secondary px-5 py-4">
             <p className="text-xs font-bold uppercase tracking-wide text-apple-muted">
               Tổng dữ liệu
             </p>
-            <p className="mt-1 text-2xl font-bold text-apple-text">{totalSize}MB</p>
+            <p className="mt-1 text-2xl font-bold text-apple-text">
+              {totalSize}MB
+            </p>
           </div>
         </div>
       </div>
@@ -119,14 +145,20 @@ export default function DocumentManager() {
           className="rounded-[28px] border border-apple-hairline bg-white p-6 shadow-sm"
           onSubmit={handleUpload}
         >
-          <h3 className="text-lg font-bold text-apple-text">Tải tài liệu lên S3</h3>
+          <h3 className="text-lg font-bold text-apple-text">
+            Tải tài liệu lên Cloud
+          </h3>
           <p className="mt-1 text-sm text-apple-muted">
-            Frontend chỉ gửi file đến presigned URL. Backend sau này sẽ giữ AWS credentials an toàn.
+            Frontend chỉ gửi file đến presigned URL. Backend sau này sẽ giữ
+            Supabase Authentication an toàn.
           </p>
 
           <div className="mt-6 space-y-5">
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-apple-text" htmlFor="document-file">
+              <label
+                className="mb-1.5 block text-sm font-semibold text-apple-text"
+                htmlFor="document-file"
+              >
                 Chọn tệp
               </label>
               <input
@@ -138,7 +170,8 @@ export default function DocumentManager() {
               />
               {selectedFile && (
                 <p className="mt-2 text-xs text-apple-muted">
-                  Đã chọn: {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(2)}MB)
+                  Đã chọn: {selectedFile.name} (
+                  {(selectedFile.size / (1024 * 1024)).toFixed(2)}MB)
                 </p>
               )}
             </div>
@@ -165,7 +198,7 @@ export default function DocumentManager() {
                   className="mb-1.5 block text-sm font-semibold text-apple-text"
                   htmlFor="document-storage-class"
                 >
-                  Lớp lưu trữ AWS
+                  Storage Class
                 </label>
                 <select
                   id="document-storage-class"
@@ -199,32 +232,47 @@ export default function DocumentManager() {
               </div>
             )}
 
-            {status && <p className="rounded-2xl bg-[#EAF4FF] px-4 py-3 text-sm text-apple-primary">{status}</p>}
-            {error && <p className="rounded-2xl bg-[#FFF2F2] px-4 py-3 text-sm text-apple-error">{error}</p>}
+            {status && (
+              <p className="rounded-2xl bg-[#EAF4FF] px-4 py-3 text-sm text-apple-primary">
+                {status}
+              </p>
+            )}
+            {error && (
+              <p className="rounded-2xl bg-[#FFF2F2] px-4 py-3 text-sm text-apple-error">
+                {error}
+              </p>
+            )}
 
             <button
               type="submit"
               disabled={isUploading}
               className="w-full rounded-full bg-apple-primary px-6 py-3 text-sm font-bold text-white transition hover:bg-apple-link active:bg-[#0055B8] disabled:cursor-not-allowed disabled:bg-apple-hairline"
             >
-              {isUploading ? "Đang tải lên..." : "Tải lên AWS S3"}
+              {isUploading ? "Đang tải lên..." : "Tải lên Cloud"}
             </button>
           </div>
         </form>
 
         <aside className="rounded-[28px] border border-apple-hairline bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-bold text-apple-text">Cấu hình cloud dự kiến</h3>
+          <h3 className="text-lg font-bold text-apple-text">
+            Cấu hình cloud dự kiến
+          </h3>
           <div className="mt-5 space-y-3">
             <ConfigRow label="Provider" value={cloudConfig.provider} />
             <ConfigRow label="Bucket" value={cloudConfig.bucketName} />
             <ConfigRow label="Region" value={cloudConfig.region} />
-            <ConfigRow label="Upload" value={cloudConfig.accessPattern} />
+            <ConfigRow
+              label="Upload"
+              value={cloudConfig.accessPattern || "Supabase Storage"}
+            />
             <ConfigRow label="Encryption" value={cloudConfig.encryption} />
             <ConfigRow label="Versioning" value={cloudConfig.versioning} />
           </div>
           <div className="mt-5 rounded-3xl bg-apple-secondary p-4">
             <p className="text-sm font-bold text-apple-text">Lifecycle rule</p>
-            <p className="mt-1 text-sm leading-6 text-apple-muted">{cloudConfig.lifecycle}</p>
+            <p className="mt-1 text-sm leading-6 text-apple-muted">
+              {cloudConfig.lifecycle}
+            </p>
           </div>
         </aside>
       </div>
@@ -232,7 +280,9 @@ export default function DocumentManager() {
       <div className="rounded-[28px] border border-apple-hairline bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h3 className="text-lg font-bold text-apple-text">Danh sách tài liệu</h3>
+            <h3 className="text-lg font-bold text-apple-text">
+              Danh sách tài liệu
+            </h3>
             <p className="mt-1 text-sm text-apple-muted">
               Metadata mẫu để sau này map với GET /api/documents.
             </p>
@@ -256,22 +306,46 @@ export default function DocumentManager() {
                 className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1.4fr_1fr_0.8fr_0.8fr] md:items-center md:gap-4"
               >
                 <div className="min-w-0">
-                  <p className="truncate font-bold text-apple-text">{doc.name}</p>
-                  <p className="mt-1 truncate text-xs text-apple-muted">{doc.s3Key}</p>
+                  <p className="truncate font-bold text-apple-text">
+                    {doc.name}
+                  </p>
+
+                  <a
+                    href={doc.s3Key}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 block truncate text-xs text-blue-500 hover:underline"
+                  >
+                    Xem tài liệu
+                  </a>
                 </div>
+
                 <div>
-                  <p className="font-semibold text-apple-text">{doc.course}</p>
-                  <p className="mt-1 text-xs text-apple-muted">{doc.folder}</p>
+                  <p className="font-semibold text-apple-text">
+                    {doc.course}
+                  </p>
+
+                  <p className="mt-1 text-xs text-apple-muted">
+                    {doc.folder}
+                  </p>
                 </div>
-                <div>
-                  <p className="font-semibold text-apple-text">{doc.sizeMB}MB</p>
-                  <p className="mt-1 text-xs text-apple-muted">{doc.storageClass}</p>
-                </div>
+
+                <p className="font-semibold text-apple-text">
+                  {doc.sizeMB} MB
+                </p>
+
+                <p className="mt-1 text-xs text-apple-muted">
+                  {doc.storageClass}
+                </p>
+
                 <div>
                   <span className="inline-flex rounded-full bg-[#EAF7EA] px-3 py-1 text-xs font-bold text-apple-success">
-                    {doc.status}
+                    Đã tải lên
                   </span>
-                  <p className="mt-1 text-xs text-apple-muted">{doc.uploadedAt}</p>
+
+                  <p className="mt-1 text-xs text-apple-muted">
+                    {doc.uploadedAt}
+                  </p>
                 </div>
               </article>
             ))}
@@ -285,7 +359,10 @@ export default function DocumentManager() {
 function TextField({ id, label, ...props }) {
   return (
     <div>
-      <label className="mb-1.5 block text-sm font-semibold text-apple-text" htmlFor={id}>
+      <label
+        className="mb-1.5 block text-sm font-semibold text-apple-text"
+        htmlFor={id}
+      >
         {label}
       </label>
       <input
@@ -301,7 +378,9 @@ function ConfigRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4 rounded-2xl bg-apple-secondary px-4 py-3">
       <span className="text-sm font-semibold text-apple-muted">{label}</span>
-      <span className="max-w-[60%] text-right text-sm font-bold text-apple-text">{value}</span>
+      <span className="max-w-[60%] text-right text-sm font-bold text-apple-text">
+        {value}
+      </span>
     </div>
   );
 }

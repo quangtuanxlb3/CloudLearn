@@ -1,77 +1,161 @@
-// Document service. Mock S3 upload flow now, API-ready later.
-
-import { AWS_STORAGE_CONFIG, API_ENDPOINTS } from "@/constants";
-import { mockDocuments } from "@/lib/mockData";
-import { delay /*, request */ } from "./apiClient";
-
-let documents = [...mockDocuments];
+import { supabase } from "@/lib/supabase";
 
 function toMB(bytes) {
-  return Math.max(bytes / (1024 * 1024), 0.01);
-}
-
-function slugify(value) {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  return Number((bytes / (1024 * 1024)).toFixed(2));
 }
 
 /**
- * GET /api/documents
+ * Lấy danh sách tài liệu
  */
 export async function getDocuments() {
-  // Real: return request(API_ENDPOINTS.DOCUMENTS);
-  await delay(400);
-  return [...documents];
+
+    const { data, error } = await supabase
+        .from("documents")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+    if (error) {
+        throw error;
+    }
+
+    return (data || []).map(doc => ({
+
+        id: doc.id,
+
+        name: doc.file_name,
+
+        course: doc.course || "Điện toán đám mây",
+
+        folder: doc.folder || "Tài liệu",
+
+        sizeMB: Number(
+            (doc.file_size / 1024 / 1024).toFixed(2)
+        ),
+
+        storageClass: doc.storage_class || "Supabase Storage",
+
+        status: "Đã đồng bộ",
+
+        uploadedAt: new Date(doc.created_at)
+            .toLocaleDateString("vi-VN"),
+
+        s3Key: doc.file_url,
+
+    }));
+
 }
 
 /**
- * POST /api/documents/upload-url
- * PUT presignedUrl
- * POST /api/documents/complete-upload
+ * Upload tài liệu
  */
 export async function uploadDocument(file, metadata, onProgress) {
-  // Real flow:
-  // 1. request(API_ENDPOINTS.DOCUMENT_UPLOAD_URL, { method: "POST", body: metadata })
-  // 2. PUT file directly to AWS S3 with the returned presigned URL
-  // 3. request(API_ENDPOINTS.DOCUMENT_COMPLETE_UPLOAD, { method: "POST", body: uploadedObject })
+
   if (!file) {
-    throw new Error("Vui lòng chọn tệp cần tải lên.");
+    throw new Error("Vui lòng chọn file.");
   }
 
-  const folderSlug = slugify(metadata.folder || "tai-lieu");
-  const fileSlug = slugify(file.name.replace(/\.[^/.]+$/, ""));
-  const extension = file.name.includes(".") ? file.name.split(".").pop() : "file";
-  const s3Key = `students/mock-user/${folderSlug}/${fileSlug}.${extension}`;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  for (const progress of [12, 28, 44, 63, 81, 100]) {
-    await delay(180);
-    onProgress?.(progress);
+  if (!user) {
+    throw new Error("Bạn chưa đăng nhập.");
   }
 
-  const uploaded = {
-    id: `doc_${Date.now()}`,
-    name: file.name,
-    course: metadata.course || "Điện toán đám mây",
-    folder: metadata.folder || "Tài liệu mới",
-    sizeMB: Number(toMB(file.size).toFixed(2)),
-    storageClass: metadata.storageClass || "S3 Standard",
+  const filePath = `${user.id}/${Date.now()}_${file.name}`;
+
+  onProgress?.(10);
+
+  const { error: uploadError } = await supabase.storage
+    .from("documents")
+    .upload(filePath, file);
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  onProgress?.(60);
+
+  const { data } = supabase.storage
+  .from("documents")
+  .getPublicUrl(filePath);
+
+const publicUrl = data.publicUrl;
+
+const { data: document, error } = await supabase
+  .from("documents")
+  .insert({
+    title: file.name,
+    file_name: file.name,
+    file_url: publicUrl,
+    file_size: file.size,
+    file_type: file.type,
+    owner_id: user.id,
+    course: metadata.course,
+    folder: metadata.folder,
+    storage_class: metadata.storageClass,
+  })
+  .select()
+  .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  onProgress?.(100);
+
+  return {
+    id: document.id,
+    name: document.file_name,
+    course: document.course,
+    folder: document.folder,
+    sizeMB: Number(
+      (document.file_size / 1024 / 1024).toFixed(2)
+    ),
+    storageClass: document.storage_class,
     status: "Đã đồng bộ",
-    uploadedAt: new Date().toLocaleDateString("vi-VN"),
-    s3Key,
-    cloudProvider: AWS_STORAGE_CONFIG.provider,
-    apiEndpoint: API_ENDPOINTS.DOCUMENT_COMPLETE_UPLOAD,
+    uploadedAt: new Date(document.created_at)
+      .toLocaleDateString("vi-VN"),
+    s3Key: document.file_url,
   };
-
-  documents = [uploaded, ...documents];
-  return uploaded;
 }
 
+/**
+ * Thông tin storage
+ */
 export async function getCloudStorageConfig() {
-  await delay(200);
-  return { ...AWS_STORAGE_CONFIG };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+
+    return {
+      provider: "Supabase Storage",
+      bucket: "documents",
+      totalFiles: 0,
+      totalSizeMB: 0,
+    };
+
+  }
+
+  const { data } = await supabase
+    .from("documents")
+    .select("file_size")
+    .eq("owner_id", user.id);
+  const totalSize =
+    data?.reduce((sum, item) => sum + (item.file_size || 0), 0) || 0;
+
+  return {
+
+    provider: "Supabase Storage",
+
+    bucket: "documents",
+
+    totalFiles: data?.length || 0,
+
+    totalSizeMB: toMB(totalSize),
+
+  };
 }
