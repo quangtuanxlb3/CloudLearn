@@ -3,15 +3,49 @@
 import { useEffect, useState } from "react";
 import { getStorageUsage } from "@/services/storageService";
 
+const LIMIT_LABELS = {
+  maxUploadSizeMB: "Upload tối đa",
+  maxDocuments: "Tài liệu tối đa",
+  maxFolders: "Thư mục tối đa",
+  maxUsers: "Người dùng tối đa",
+  maxCourses: "Khóa học tối đa",
+  maxStorageBuckets: "Bucket tối đa",
+  maxConcurrentUploads: "Upload đồng thời",
+  maxShareLinks: "Link chia sẻ tối đa",
+  apiRequestsPerDay: "API/ngày",
+  retentionDays: "Thời hạn lưu",
+  auditLogRetentionDays: "Lưu audit log",
+  allowedFileTypes: "Loại file cho phép",
+  canManageUsers: "Quản lý người dùng",
+  canDeleteAnyDocument: "Xóa mọi tài liệu",
+};
+
+function formatLimitValue(key, value) {
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "Được phép" : "Không";
+  if (key === "maxUploadSizeMB") return `${value}MB/tệp`;
+  if (key === "retentionDays" || key === "auditLogRetentionDays") {
+    return `${value} ngày`;
+  }
+
+  return value;
+}
+
 export default function StorageUsageCard({ expanded = false }) {
   const [storage, setStorage] = useState({
     usedGB: 2,
     limitGB: 5,
     documentCount: 0,
     folderCount: 0,
+    limits: null,
   });
   const [isLoading, setLoading] = useState(true);
-  const percent = Math.round((storage.usedGB / storage.limitGB) * 100);
+  const percent = Math.min(
+    100,
+    Math.round((storage.usedGB / Math.max(storage.limitGB, 1)) * 100),
+  );
+  const remainingGB = Math.max(storage.limitGB - storage.usedGB, 0);
+  const limitItems = storage.limits ? Object.entries(storage.limits) : [];
 
   useEffect(() => {
     let isMounted = true;
@@ -74,10 +108,27 @@ export default function StorageUsageCard({ expanded = false }) {
         {expanded && (
           <>
             <StatCard label="Đã dùng" value={`${storage.usedGB}GB`} tone="slate" />
-            <StatCard label="Còn trống" value={`${storage.limitGB - storage.usedGB}GB`} tone="emerald" />
+            <StatCard label="Còn trống" value={`${remainingGB}GB`} tone="emerald" />
           </>
         )}
       </div>
+
+      {storage.limits && (
+        <div className="mt-6 rounded-[28px] border border-apple-hairline bg-apple-secondary p-5">
+          <p className="mb-4 text-sm font-bold text-apple-text">
+            Giới hạn tài khoản quản trị
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {limitItems.map(([key, value]) => (
+              <LimitItem
+                key={key}
+                label={LIMIT_LABELS[key] || key}
+                value={formatLimitValue(key, value)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 rounded-[28px] border border-dashed border-apple-hairline bg-apple-secondary p-5">
         <p className="text-sm font-bold text-apple-text">Công cụ lưu trữ sắp tới</p>
@@ -87,6 +138,15 @@ export default function StorageUsageCard({ expanded = false }) {
         </p>
       </div>
     </aside>
+  );
+}
+
+function LimitItem({ label, value }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-apple-muted">{label}</p>
+      <p className="mt-1 text-sm font-bold text-apple-text">{value}</p>
+    </div>
   );
 }
 

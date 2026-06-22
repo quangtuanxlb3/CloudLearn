@@ -1,10 +1,22 @@
 import { supabase } from "@/lib/supabase";
 import { getDocuments as getSupabaseDocuments } from "./documentService";
+import { getCurrentUser } from "./userService";
 
 /**
  * Lấy thông tin dung lượng storage
  */
 export async function getStorageUsage() {
+  const currentUser = await getCurrentUser();
+
+  if (currentUser?.isDemo) {
+    return {
+      usedGB: currentUser.storageUsedGB,
+      limitGB: currentUser.storageLimitGB,
+      documentCount: currentUser.documentCount || 0,
+      folderCount: currentUser.folderCount || 0,
+      limits: currentUser.limits || null,
+    };
+  }
 
   const {
     data: { user },

@@ -1,8 +1,18 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { loginUser, registerUser, socialLogin, logoutUser } from "@/services/authService";
-import { updateProfile as updateProfileService } from "@/services/userService";
+import {
+  getCurrentUser,
+  updateProfile as updateProfileService,
+} from "@/services/userService";
 
 const AuthContext = createContext(null);
 
@@ -13,7 +23,36 @@ const AuthContext = createContext(null);
  */
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function restoreSession() {
+      try {
+        const currentUser = await getCurrentUser();
+        if (isMounted) {
+          setUser(currentUser);
+        }
+      } catch (error) {
+        console.error("Không thể khôi phục phiên đăng nhập:", error);
+        if (isMounted) {
+          setUser(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsAuthReady(true);
+        }
+      }
+    }
+
+    restoreSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const login = useCallback(async (credentials) => {
     setIsAuthenticating(true);
@@ -63,6 +102,7 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
+      isAuthReady,
       isAuthenticated: Boolean(user),
       isAuthenticating,
       login,
@@ -71,7 +111,16 @@ export function AuthProvider({ children }) {
       logout,
       updateProfile,
     }),
-    [user, isAuthenticating, login, register, loginWithProvider, logout, updateProfile]
+    [
+      user,
+      isAuthReady,
+      isAuthenticating,
+      login,
+      register,
+      loginWithProvider,
+      logout,
+      updateProfile,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AWS_STORAGE_CONFIG } from "@/constants";
-import { getDocuments, uploadDocument } from "@/services/documentService";
+import {
+  deleteDocument,
+  getDocuments,
+  uploadDocument,
+} from "@/services/documentService";
 
 import { getCloudStorageConfig } from "@/services/storageService";
 
@@ -17,6 +21,18 @@ const STORAGE_CLASSES = [
 
 ];
 
+function formatFileSize(bytes = 0) {
+  const size = Number(bytes || 0);
+
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 export default function DocumentManager() {
   const [documents, setDocuments] = useState([]);
   const [cloudConfig, setCloudConfig] = useState(AWS_STORAGE_CONFIG);
@@ -28,29 +44,39 @@ export default function DocumentManager() {
   });
   const [progress, setProgress] = useState(0);
   const [isUploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([getDocuments(), getCloudStorageConfig()]).then(
-      ([docs, config]) => {
+    Promise.all([getDocuments(), getCloudStorageConfig()])
+      .then(([docs, config]) => {
         if (!isMounted) return;
         setDocuments(docs);
         setCloudConfig(config);
-      },
-    );
+      })
+      .catch((loadError) => {
+        if (!isMounted) return;
+        setError(
+          loadError.message || "Không thể tải danh sách tài liệu.",
+        );
+      });
 
     return () => {
       isMounted = false;
     };
   }, []);
 
-  const totalSize = useMemo(() => {
-    return documents
-      .reduce((sum, item) => sum + Number(item.sizeMB || 0), 0)
-      .toFixed(2);
+  const totalSizeLabel = useMemo(() => {
+    const totalBytes = documents.reduce(
+      (sum, item) =>
+        sum + Number(item.sizeBytes || Number(item.sizeMB || 0) * 1024 * 1024),
+      0,
+    );
+
+    return formatFileSize(totalBytes);
   }, [documents]);
 
   function updateMetadata(event) {
@@ -113,6 +139,49 @@ export default function DocumentManager() {
     }
   }
 
+  function handleDownload(doc) {
+    if (!doc.s3Key) {
+      setError("Tài liệu này chưa có đường dẫn tải xuống.");
+      return;
+    }
+
+    setError("");
+    setStatus(`Đã bắt đầu tải "${doc.name}" về máy.`);
+
+    const params = new URLSearchParams({
+      url: doc.s3Key,
+      name: doc.name || "tai-lieu",
+    });
+    const link = document.createElement("a");
+
+    link.href = `/api/documents/download?${params.toString()}`;
+    link.download = doc.name || "tai-lieu";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  async function handleDelete(doc) {
+    const shouldDelete = window.confirm(
+      `Bạn có chắc muốn xóa tài liệu "${doc.name}" không?`,
+    );
+
+    if (!shouldDelete) return;
+
+    try {
+      setDeletingId(doc.id);
+      setError("");
+      setStatus("");
+      await deleteDocument(doc);
+      setDocuments((current) => current.filter((item) => item.id !== doc.id));
+      setStatus(`Đã xóa tài liệu "${doc.name}".`);
+    } catch (deleteError) {
+      setError(deleteError.message || "Không thể xóa tài liệu.");
+    } finally {
+      setDeletingId("");
+    }
+  }
+
   return (
     <section className="space-y-6 xl:col-span-3">
       <div className="rounded-[28px] border border-apple-hairline bg-white p-6 shadow-sm">
@@ -134,7 +203,7 @@ export default function DocumentManager() {
               Tổng dữ liệu
             </p>
             <p className="mt-1 text-2xl font-bold text-apple-text">
-              {totalSize}MB
+              {totalSizeLabel}
             </p>
           </div>
         </div>
@@ -293,17 +362,19 @@ export default function DocumentManager() {
         </div>
 
         <div className="mt-5 overflow-hidden rounded-3xl border border-apple-hairline">
-          <div className="hidden grid-cols-[1.4fr_1fr_0.8fr_0.8fr] gap-4 bg-apple-secondary px-4 py-3 text-xs font-bold uppercase tracking-wide text-apple-muted md:grid">
+          <div className="hidden grid-cols-[1.35fr_0.95fr_0.55fr_0.65fr_0.85fr_0.8fr] gap-4 bg-apple-secondary px-4 py-3 text-xs font-bold uppercase tracking-wide text-apple-muted md:grid">
             <span>Tên tệp</span>
             <span>Môn / thư mục</span>
+            <span>Loại</span>
             <span>Dung lượng</span>
             <span>Trạng thái</span>
+            <span className="text-right">Thao tác</span>
           </div>
           <div className="divide-y divide-apple-hairline">
             {documents.map((doc) => (
               <article
                 key={doc.id}
-                className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1.4fr_1fr_0.8fr_0.8fr] md:items-center md:gap-4"
+                className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1.35fr_0.95fr_0.55fr_0.65fr_0.85fr_0.8fr] md:items-center md:gap-4"
               >
                 <div className="min-w-0">
                   <p className="truncate font-bold text-apple-text">
@@ -330,8 +401,19 @@ export default function DocumentManager() {
                   </p>
                 </div>
 
+                <div>
+                  <span className="inline-flex max-w-full rounded-full bg-apple-secondary px-3 py-1 text-xs font-bold uppercase text-apple-muted">
+                    {doc.fileExtension || "FILE"}
+                  </span>
+                  {doc.fileType && (
+                    <p className="mt-1 truncate text-xs text-apple-muted">
+                      {doc.fileType}
+                    </p>
+                  )}
+                </div>
+
                 <p className="font-semibold text-apple-text">
-                  {doc.sizeMB} MB
+                  {doc.sizeLabel || `${doc.sizeMB} MB`}
                 </p>
 
                 <p className="mt-1 text-xs text-apple-muted">
@@ -346,6 +428,24 @@ export default function DocumentManager() {
                   <p className="mt-1 text-xs text-apple-muted">
                     {doc.uploadedAt}
                   </p>
+                </div>
+
+                <div className="flex flex-wrap justify-start gap-2 md:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(doc)}
+                    className="rounded-full border border-apple-hairline bg-white px-3 py-1.5 text-xs font-bold text-apple-primary transition hover:border-apple-primary hover:bg-[#EAF4FF]"
+                  >
+                    Tải về
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(doc)}
+                    disabled={deletingId === doc.id}
+                    className="rounded-full border border-[#FFD7D7] bg-white px-3 py-1.5 text-xs font-bold text-apple-error transition hover:bg-[#FFF2F2] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingId === doc.id ? "Đang xóa..." : "Xóa"}
+                  </button>
                 </div>
               </article>
             ))}

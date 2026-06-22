@@ -2,13 +2,15 @@
 // Mock implementations now; real fetch calls (see commented examples) later.
 
 import { API_ENDPOINTS, USER_ROLES } from "@/constants";
-import { mockCredentials, mockUser } from "@/lib/mockData";
+import { getMockUserByEmail, mockCredentials, mockUser } from "@/lib/mockData";
 import { clearAuthToken, delay, setAuthToken /*, request, USE_MOCK */ } from "./apiClient";
-import { setCurrentUser } from "./userService";
+import { normalizeUser, setCurrentUser } from "./userService";
 import { supabase } from "@/lib/supabase";
 
-function makeToken() {
-  return `mock.${Math.random().toString(36).slice(2)}.${Date.now()}`;
+function makeToken(email = "") {
+  const identity = encodeURIComponent(email || "demo");
+
+  return `mock.${identity}.${Date.now()}`;
 }
 
 /**
@@ -16,8 +18,33 @@ function makeToken() {
  * @returns {Promise<{ user: object, token: string }>}
  */
 export async function loginUser({ email, password }) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const demoCredential = mockCredentials.find(
+    (credential) =>
+      credential.email === normalizedEmail && credential.password === password,
+  );
+
+  if (demoCredential) {
+    await delay(300);
+    const token = makeToken(normalizedEmail);
+    const demoUser = getMockUserByEmail(normalizedEmail) || mockUser;
+    const user = normalizeUser({
+      ...demoUser,
+      email: normalizedEmail,
+      isDemo: true,
+    });
+
+    setAuthToken(token);
+    setCurrentUser(user);
+
+    return {
+      user,
+      token,
+    };
+  }
+
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
+    email: normalizedEmail,
     password,
   });
 
@@ -33,11 +60,13 @@ export async function loginUser({ email, password }) {
 
   const token = data.session.access_token;
 
+  const user = normalizeUser(profile);
+
   setAuthToken(token);
-  setCurrentUser(profile);
+  setCurrentUser(user);
 
   return {
-    user: profile,
+    user,
     token,
   };
 }
@@ -76,13 +105,14 @@ export async function registerUser({
 
   setAuthToken(token);
 
-  const user = {
+  const user = normalizeUser({
     id: data.user.id,
+    fullName,
     full_name: fullName,
     email,
     role: USER_ROLES.STUDENT,
     storage_used_gb: 0,
-  };
+  });
 
   setCurrentUser(user);
 
@@ -97,7 +127,7 @@ export async function registerUser({
  */
 export async function socialLogin(provider) {
   await delay(500);
-  const token = makeToken();
+  const token = makeToken(provider.toLowerCase());
   setAuthToken(token);
   const user = { ...mockUser, provider };
   setCurrentUser(user);
@@ -107,6 +137,7 @@ export async function socialLogin(provider) {
 export async function logoutUser() {
   await supabase.auth.signOut();
   clearAuthToken();
+  setCurrentUser(null);
 }
 
 export { API_ENDPOINTS };

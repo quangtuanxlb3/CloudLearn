@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { NAV_ITEMS } from "@/constants";
+import { NAV_ITEMS, ROLE_LABELS, USER_ROLES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
 
 const iconMap = {
@@ -10,6 +10,7 @@ const iconMap = {
   cloud: "C",
   chat: "A",
   settings: "S",
+  dev: "<>",
 };
 
 export default function Sidebar({ isOpen, activeSection, onNavigate, onClose }) {
@@ -63,6 +64,9 @@ export default function Sidebar({ isOpen, activeSection, onNavigate, onClose }) 
           <div className="mb-6 rounded-3xl bg-white p-4 shadow-sm">
             <p className="truncate text-sm font-bold text-apple-text">{user.fullName}</p>
             <p className="mt-1 truncate text-xs text-apple-muted">{user.email}</p>
+            <span className="mt-3 inline-flex rounded-full bg-[#EAF4FF] px-3 py-1 text-xs font-bold text-apple-primary">
+              {ROLE_LABELS[user.role] || "Tài khoản"}
+            </span>
           </div>
         )}
 
@@ -93,6 +97,34 @@ export default function Sidebar({ isOpen, activeSection, onNavigate, onClose }) 
               </button>
             );
           })}
+
+          {user?.role === USER_ROLES.ADMIN && (
+            <button
+              type="button"
+              onClick={() => {
+                router.push("/dev");
+                onClose();
+              }}
+              className={`flex w-full items-center gap-3 rounded-full px-4 py-3 text-left text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-apple-primary focus:ring-offset-2 ${
+                activeSection === "dev"
+                  ? "bg-[#EAF4FF] text-apple-primary"
+                  : "text-apple-muted hover:bg-white hover:text-apple-text"
+              }`}
+              aria-current={activeSection === "dev" ? "page" : undefined}
+            >
+              <span
+                aria-hidden="true"
+                className={`flex h-8 w-8 items-center justify-center rounded-xl text-xs ${
+                  activeSection === "dev"
+                    ? "bg-white text-apple-primary"
+                    : "bg-apple-secondary text-apple-muted"
+                }`}
+              >
+                {iconMap.dev}
+              </span>
+              Dev Console
+            </button>
+          )}
         </nav>
 
         <div className="mt-auto rounded-3xl bg-white p-4 shadow-sm">

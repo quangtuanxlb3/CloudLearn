@@ -1,9 +1,23 @@
 import { supabase } from "@/lib/supabase";
+import { getMockUserByEmail, mockUser } from "@/lib/mockData";
+import { getAuthToken } from "./apiClient";
 
 let currentUser = null;
 
+export function normalizeUser(user) {
+  if (!user) return null;
+
+  return {
+    ...user,
+    fullName: user.fullName || user.full_name || user.email || "Người dùng",
+    avatarUrl: user.avatarUrl || user.avatar_url || "",
+    storageUsedGB: user.storageUsedGB ?? user.storage_used_gb ?? 0,
+    storageLimitGB: user.storageLimitGB ?? user.storage_limit_gb ?? 2,
+  };
+}
+
 export function setCurrentUser(user) {
-  currentUser = user;
+  currentUser = normalizeUser(user);
 }
 
 /**
@@ -12,6 +26,21 @@ export function setCurrentUser(user) {
 export async function getCurrentUser() {
 
   if (currentUser) {
+    return currentUser;
+  }
+
+  const token = getAuthToken();
+
+  if (token?.startsWith("mock.")) {
+    const [, encodedEmail = ""] = token.split(".");
+    const email = decodeURIComponent(encodedEmail);
+    const demoUser = getMockUserByEmail(email) || mockUser;
+
+    currentUser = normalizeUser({
+      ...demoUser,
+      isDemo: true,
+    });
+
     return currentUser;
   }
 
@@ -33,9 +62,9 @@ export async function getCurrentUser() {
     throw new Error(error.message);
   }
 
-  currentUser = data;
+  currentUser = normalizeUser(data);
 
-  return data;
+  return currentUser;
 }
 
 /**
@@ -72,9 +101,9 @@ export async function updateProfile(updates) {
     throw new Error(error.message);
   }
 
-  currentUser = data;
+  currentUser = normalizeUser(data);
 
-  return data;
+  return currentUser;
 }
 
 /**
