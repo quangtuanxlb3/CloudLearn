@@ -21,6 +21,7 @@ export default function DocumentManager() {
   const [documents, setDocuments] = useState([]);
   const [cloudConfig, setCloudConfig] = useState(AWS_STORAGE_CONFIG);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
   const [metadata, setMetadata] = useState({
     course: "Điện toán đám mây",
     folder: "Bài tập lớn",
@@ -48,10 +49,16 @@ export default function DocumentManager() {
   }, []);
 
   const totalSize = useMemo(() => {
+    const filteredDocuments = documents.filter((doc) =>
+  doc.name.toLowerCase().includes(searchTerm.toLowerCase())
+);
     return documents
       .reduce((sum, item) => sum + Number(item.sizeMB || 0), 0)
       .toFixed(2);
   }, [documents]);
+  const filteredDocuments = documents.filter((doc) =>
+  doc.name.toLowerCase().includes(searchTerm.toLowerCase())
+);
 
   function updateMetadata(event) {
     const { name, value } = event.target;
@@ -283,6 +290,13 @@ export default function DocumentManager() {
             <h3 className="text-lg font-bold text-apple-text">
               Danh sách tài liệu
             </h3>
+            <input
+  type="text"
+  placeholder="Tìm kiếm tài liệu..."
+  value={searchTerm}
+  onChange={(e) => setSearchTerm(e.target.value)}
+  className="mt-3 w-full rounded-2xl border border-apple-hairline px-4 py-2"
+/>
             <p className="mt-1 text-sm text-apple-muted">
               Metadata mẫu để sau này map với GET /api/documents.
             </p>
@@ -300,24 +314,34 @@ export default function DocumentManager() {
             <span>Trạng thái</span>
           </div>
           <div className="divide-y divide-apple-hairline">
-            {documents.map((doc) => (
-              <article
-                key={doc.id}
-                className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1.4fr_1fr_0.8fr_0.8fr] md:items-center md:gap-4"
-              >
-                <div className="min-w-0">
+  {filteredDocuments.map((doc) => (
+                <article
+  key={doc.id}
+  className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1.4fr_1fr_0.8fr_0.8fr] md:items-center md:gap-4"
+>
+  <div className="min-w-0">
                   <p className="truncate font-bold text-apple-text">
                     {doc.name}
                   </p>
 
-                  <a
-                    href={doc.s3Key}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1 block truncate text-xs text-blue-500 hover:underline"
-                  >
-                    Xem tài liệu
-                  </a>
+                  <div className="flex gap-3 mt-1">
+  <a
+    href={doc.s3Key}
+    target="_blank"
+    rel="noreferrer"
+    className="text-blue-500 hover:underline text-xs"
+  >
+    Xem
+  </a>
+
+  <a
+    href={doc.s3Key}
+    download
+    className="text-green-600 hover:underline text-xs"
+  >
+    Tải xuống
+  </a>
+</div>
                 </div>
 
                 <div>
