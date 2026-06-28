@@ -13,18 +13,21 @@ export default function AccountDashboard() {
   const [activeSection, setActiveSection] = useState(DASHBOARD_SECTIONS.PROFILE);
 
   return (
-    <DashboardLayout activeSection={activeSection} onSectionChange={setActiveSection}>
+    <DashboardLayout
+      activeSection={activeSection}
+      onSectionChange={setActiveSection}
+    >
       <div className="mx-auto max-w-6xl">
         <div className="mb-8">
           <p className="mb-2 text-sm font-bold uppercase tracking-wide text-apple-primary">
             Không gian học tập đám mây
           </p>
           <h1 className="text-2xl font-bold text-apple-text md:text-3xl">
-            Bảng điều khiển quản lý tài khoản
+            Bảng điều khiển CloudLearn
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-apple-muted">
-            Quản lý hồ sơ, bảo mật mật khẩu, dung lượng lưu trữ và các quy trình tài
-            liệu trong một không gian làm việc linh hoạt.
+            Quản lý hồ sơ, dung lượng, kho tài liệu có thể tìm kiếm và tin nhắn
+            chia sẻ file trong một không gian học tập linh hoạt.
           </p>
         </div>
 
@@ -37,7 +40,9 @@ export default function AccountDashboard() {
             </>
           )}
 
-          {activeSection === DASHBOARD_SECTIONS.STORAGE && <StorageUsageCard expanded />}
+          {activeSection === DASHBOARD_SECTIONS.STORAGE && (
+            <StorageUsageCard expanded />
+          )}
 
           {activeSection === DASHBOARD_SECTIONS.SUPPORT && <AdminChat />}
 
@@ -45,7 +50,9 @@ export default function AccountDashboard() {
 
           {activeSection !== DASHBOARD_SECTIONS.STORAGE &&
             activeSection !== DASHBOARD_SECTIONS.SUPPORT &&
-            activeSection !== DASHBOARD_SECTIONS.DOCUMENTS && <StorageUsageCard />}
+            activeSection !== DASHBOARD_SECTIONS.DOCUMENTS && (
+              <StorageUsageCard />
+            )}
         </div>
       </div>
     </DashboardLayout>

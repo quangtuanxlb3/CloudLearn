@@ -24,7 +24,6 @@ export const AUTH_MODES = {
   REGISTER: "register",
 };
 
-// Dashboard navigation sections.
 export const DASHBOARD_SECTIONS = {
   PROFILE: "profile",
   DOCUMENTS: "documents",
@@ -35,17 +34,14 @@ export const DASHBOARD_SECTIONS = {
 
 export const NAV_ITEMS = [
   { id: DASHBOARD_SECTIONS.PROFILE, label: "Hồ sơ", icon: "user" },
-  { id: DASHBOARD_SECTIONS.DOCUMENTS, label: "Tài liệu của tôi", icon: "document" },
+  { id: DASHBOARD_SECTIONS.DOCUMENTS, label: "Kho tài liệu", icon: "document" },
   { id: DASHBOARD_SECTIONS.STORAGE, label: "Dung lượng", icon: "cloud" },
-  { id: DASHBOARD_SECTIONS.SUPPORT, label: "Chat Admin", icon: "chat" },
+  { id: DASHBOARD_SECTIONS.SUPPORT, label: "Tin nhắn", icon: "chat" },
   { id: DASHBOARD_SECTIONS.SETTINGS, label: "Cài đặt", icon: "settings" },
 ];
 
-// Validation rules shared between auth and account forms.
 export const PASSWORD_MIN_LENGTH = 8;
 
-// Future API endpoints (used today by the mock service layer as documentation,
-// ready to be swapped for real fetch calls).
 export const API_ENDPOINTS = {
   LOGIN: "/api/auth/login",
   REGISTER: "/api/auth/register",
@@ -59,11 +55,11 @@ export const API_ENDPOINTS = {
 };
 
 export const AWS_STORAGE_CONFIG = {
-  provider: "AWS S3",
-  bucketName: "cloudlearn-gtvt-hcm-documents",
-  region: "ap-southeast-1",
-  encryption: "SSE-S3",
-  accessPattern: "Presigned URL",
+  provider: "Supabase",
+  bucketName: "documents",
+  region: "Supabase Cloud",
+  encryption: "AES-256",
+  accessPattern: "Public/Private document sharing",
   versioning: "Enabled",
-  lifecycle: "Move inactive files to S3 Standard-IA after 30 days",
+  lifecycle: "Keep uploaded learning documents available for search and download",
 };

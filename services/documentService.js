@@ -36,7 +36,7 @@ function getStoragePathFromPublicUrl(fileUrl) {
 }
 
 function mapDocument(doc) {
-  const fileName = doc.file_name || "tai-lieu";
+  const fileName = doc.file_name || doc.title || "tai-lieu";
 
   return {
     id: doc.id,
@@ -48,17 +48,17 @@ function mapDocument(doc) {
     sizeLabel: formatFileSize(doc.file_size),
     fileType: doc.file_type || getFileExtension(fileName),
     fileExtension: getFileExtension(fileName),
-    storageClass: doc.storage_class || "Supabase Storage",
+    storageClass: doc.storage_class || "Public",
     status: "Đã đồng bộ",
-    uploadedAt: new Date(doc.created_at).toLocaleDateString("vi-VN"),
+    uploadedAt: doc.created_at
+      ? new Date(doc.created_at).toLocaleDateString("vi-VN")
+      : "",
     s3Key: doc.file_url,
     filePath: getStoragePathFromPublicUrl(doc.file_url),
+    ownerId: doc.owner_id,
   };
 }
 
-/**
- * Lấy danh sách tài liệu
- */
 export async function getDocuments() {
   const { data, error } = await supabase
     .from("documents")
@@ -72,9 +72,6 @@ export async function getDocuments() {
   return (data || []).map(mapDocument);
 }
 
-/**
- * Upload tài liệu
- */
 export async function uploadDocument(file, metadata, onProgress) {
   if (!file) {
     throw new Error("Vui lòng chọn file.");
@@ -133,9 +130,6 @@ export async function uploadDocument(file, metadata, onProgress) {
   };
 }
 
-/**
- * Xóa tài liệu khỏi Supabase Storage và bảng documents
- */
 export async function deleteDocument(document) {
   if (!document?.id) {
     throw new Error("Không tìm thấy tài liệu cần xóa.");
@@ -166,9 +160,6 @@ export async function deleteDocument(document) {
   return true;
 }
 
-/**
- * Thông tin storage
- */
 export async function getCloudStorageConfig() {
   const {
     data: { user },

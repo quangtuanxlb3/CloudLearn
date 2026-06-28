@@ -7,11 +7,14 @@ import {
   getDocuments,
   uploadDocument,
 } from "@/services/documentService";
-
 import { getCloudStorageConfig } from "@/services/storageService";
 
 const MAX_FILE_SIZE_MB = 100;
-const STORAGE_CLASSES = ["Standard", "Private", "Public"];
+const STORAGE_CLASSES = ["Public", "Private", "Standard"];
+const VIEW_TABS = [
+  { id: "community", label: "Cộng đồng" },
+  { id: "mine", label: "Tài liệu của tôi" },
+];
 
 function formatFileSize(bytes = 0) {
   const size = Number(bytes || 0);
@@ -25,6 +28,10 @@ function formatFileSize(bytes = 0) {
   return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+function isPublicDocument(doc) {
+  return doc.storageClass === "Public" || doc.storageClass === "Standard";
+}
+
 export default function DocumentManager() {
   const [documents, setDocuments] = useState([]);
   const [cloudConfig, setCloudConfig] = useState(AWS_STORAGE_CONFIG);
@@ -32,21 +39,42 @@ export default function DocumentManager() {
   const [metadata, setMetadata] = useState({
     course: "Điện toán đám mây",
     folder: "Bài tập lớn",
-    storageClass: "Standard",
+    storageClass: "Public",
   });
   const [progress, setProgress] = useState(0);
   const [isUploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-
   const [searchTerm, setSearchTerm] = useState("");
-  const filteredDocuments = useMemo(() => {
-    if (!searchTerm.trim()) return documents;
-    return documents.filter((doc) =>
-      doc.name?.toLowerCase().includes(searchTerm.toLowerCase()),
+  const [activeTab, setActiveTab] = useState("community");
+  const [copiedId, setCopiedId] = useState("");
+
+  const totalSizeLabel = useMemo(() => {
+    const totalBytes = documents.reduce(
+      (sum, item) =>
+        sum + Number(item.sizeBytes || Number(item.sizeMB || 0) * 1024 * 1024),
+      0,
     );
-  }, [documents, searchTerm]);
+
+    return formatFileSize(totalBytes);
+  }, [documents]);
+
+  const visibleDocuments = useMemo(() => {
+    const cleanSearch = searchTerm.trim().toLowerCase();
+    const source =
+      activeTab === "community"
+        ? documents.filter(isPublicDocument)
+        : documents;
+
+    if (!cleanSearch) return source;
+
+    return source.filter((doc) =>
+      [doc.name, doc.course, doc.folder, doc.fileType, doc.fileExtension]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(cleanSearch)),
+    );
+  }, [activeTab, documents, searchTerm]);
 
   useEffect(() => {
     let isMounted = true;
@@ -66,16 +94,6 @@ export default function DocumentManager() {
       isMounted = false;
     };
   }, []);
-
-  const totalSizeLabel = useMemo(() => {
-    const totalBytes = documents.reduce(
-      (sum, item) =>
-        sum + Number(item.sizeBytes || Number(item.sizeMB || 0) * 1024 * 1024),
-      0,
-    );
-
-    return formatFileSize(totalBytes);
-  }, [documents]);
 
   function updateMetadata(event) {
     const { name, value } = event.target;
@@ -118,18 +136,17 @@ export default function DocumentManager() {
     try {
       setUploading(true);
       setError("");
-      setStatus("Đang tạo presigned URL và tải lên Supabase...");
-      const uploaded = await uploadDocument(
-        selectedFile,
-        metadata,
-        setProgress,
-      );
+      setStatus("Đang tải tệp lên Supabase Storage...");
+      const uploaded = await uploadDocument(selectedFile, metadata, setProgress);
       setDocuments((current) => [uploaded, ...current]);
       setSelectedFile(null);
-      setStatus("Tải lên thành công. Metadata đã được lưu vào hệ thống.");
-      if (event.currentTarget) {
-        event.currentTarget.reset();
-      }
+      setActiveTab(isPublicDocument(uploaded) ? "community" : "mine");
+      setStatus(
+        metadata.storageClass === "Private"
+          ? "Tải lên thành công. Tài liệu đang ở chế độ riêng tư."
+          : "Tải lên thành công. Người khác có thể tìm và tải tài liệu này.",
+      );
+      event.currentTarget?.reset();
     } catch (uploadError) {
       setError(uploadError.message || "Không thể tải tệp lên.");
     } finally {
@@ -159,6 +176,38 @@ export default function DocumentManager() {
     link.remove();
   }
 
+  function getShareLink(doc) {
+    if (typeof window === "undefined" || !doc.s3Key) return "";
+
+    const params = new URLSearchParams({
+      url: doc.s3Key,
+      name: doc.name || "tai-lieu",
+      type: doc.fileType || "",
+      size: doc.sizeLabel || "",
+    });
+
+    return `${window.location.origin}/share?${params.toString()}`;
+  }
+
+  async function handleCopyShareLink(doc) {
+    if (!doc.s3Key) {
+      setError("Tài liệu này chưa có đường dẫn chia sẻ.");
+      return;
+    }
+
+    const shareLink = getShareLink(doc);
+
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopiedId(doc.id);
+      setError("");
+      setStatus(`Đã sao chép link chia sẻ cho "${doc.name}".`);
+      window.setTimeout(() => setCopiedId(""), 1800);
+    } catch {
+      setError("Không thể sao chép link. Hãy mở link chia sẻ rồi copy thủ công.");
+    }
+  }
+
   async function handleDelete(doc) {
     const shouldDelete = window.confirm(
       `Bạn có chắc muốn xóa tài liệu "${doc.name}" không?`,
@@ -184,25 +233,24 @@ export default function DocumentManager() {
     <section className="space-y-6 xl:col-span-3">
       <div className="rounded-[28px] border border-apple-hairline bg-white p-6 shadow-sm">
         <p className="text-sm font-bold uppercase tracking-wide text-apple-primary">
-          Supabase Storage
+          CloudLearn Social Docs
         </p>
         <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-apple-text">
-              Quản lý tài liệu học tập
+              Chia sẻ và tìm kiếm tài liệu học tập
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-apple-muted">
-              Mô phỏng luồng tải tài liệu lên Supabase cho môn Điện toán đám mây
-              tại Đại học GTVT TP HCM.
+              Tải tài liệu lên cloud, đặt chế độ công khai để bạn bè tìm thấy,
+              hoặc giữ riêng tư cho kho cá nhân.
             </p>
           </div>
-          <div className="rounded-3xl bg-apple-secondary px-5 py-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-apple-muted">
-              Tổng dữ liệu
-            </p>
-            <p className="mt-1 text-2xl font-bold text-apple-text">
-              {totalSizeLabel}
-            </p>
+          <div className="grid grid-cols-2 gap-3 sm:flex">
+            <Metric label="Tổng dữ liệu" value={totalSizeLabel} />
+            <Metric
+              label="Public"
+              value={documents.filter(isPublicDocument).length}
+            />
           </div>
         </div>
       </div>
@@ -213,11 +261,11 @@ export default function DocumentManager() {
           onSubmit={handleUpload}
         >
           <h3 className="text-lg font-bold text-apple-text">
-            Tải tài liệu lên Cloud
+            Đăng tài liệu lên cộng đồng
           </h3>
           <p className="mt-1 text-sm text-apple-muted">
-            Frontend chỉ gửi file đến presigned URL. Backend sau này sẽ giữ
-            Supabase Authentication an toàn.
+            Chọn Public để người khác tìm kiếm và tải về, hoặc Private nếu chỉ
+            muốn lưu cho riêng bạn.
           </p>
 
           <div className="mt-6 space-y-5">
@@ -255,7 +303,7 @@ export default function DocumentManager() {
               <TextField
                 id="document-folder"
                 name="folder"
-                label="Thư mục"
+                label="Chủ đề / thư mục"
                 value={metadata.folder}
                 onChange={updateMetadata}
                 disabled={isUploading}
@@ -265,7 +313,7 @@ export default function DocumentManager() {
                   className="mb-1.5 block text-sm font-semibold text-apple-text"
                   htmlFor="document-storage-class"
                 >
-                  Storage Class
+                  Chế độ chia sẻ
                 </label>
                 <select
                   id="document-storage-class"
@@ -315,82 +363,94 @@ export default function DocumentManager() {
               disabled={isUploading}
               className="w-full rounded-full bg-apple-primary px-6 py-3 text-sm font-bold text-white transition hover:bg-apple-link active:bg-[#0055B8] disabled:cursor-not-allowed disabled:bg-apple-hairline"
             >
-              {isUploading ? "Đang tải lên..." : "Tải lên Cloud"}
+              {isUploading ? "Đang tải lên..." : "Đăng tài liệu"}
             </button>
           </div>
         </form>
 
         <aside className="rounded-[28px] border border-apple-hairline bg-white p-6 shadow-sm">
           <h3 className="text-lg font-bold text-apple-text">
-            Cấu hình cloud dự kiến
+            Luồng sử dụng kiểu mạng xã hội
           </h3>
           <div className="mt-5 space-y-3">
-            <ConfigRow label="Provider" value={cloudConfig.provider} />
-            <ConfigRow label="Bucket" value={cloudConfig.bucketName} />
-            <ConfigRow label="Region" value={cloudConfig.region} />
-            <ConfigRow
-              label="Upload"
-              value={cloudConfig.accessPattern || "Supabase Storage"}
-            />
-            <ConfigRow label="Encryption" value={cloudConfig.encryption} />
-            <ConfigRow label="Versioning" value={cloudConfig.versioning} />
+            <ConfigRow label="Upload" value="Tệp + môn học + chủ đề" />
+            <ConfigRow label="Tìm kiếm" value="Tên, môn, thư mục, loại file" />
+            <ConfigRow label="Tải về" value="Public docs tải trực tiếp" />
+            <ConfigRow label="Lưu trữ" value={cloudConfig.bucketName} />
           </div>
           <div className="mt-5 rounded-3xl bg-apple-secondary p-4">
-            <p className="text-sm font-bold text-apple-text">Lifecycle rule</p>
+            <p className="text-sm font-bold text-apple-text">
+              Gợi ý backend tiếp theo
+            </p>
             <p className="mt-1 text-sm leading-6 text-apple-muted">
-              {cloudConfig.lifecycle}
+              Có thể thêm bảng likes, comments và messages để biến feed này
+              thành mạng xã hội realtime hoàn chỉnh.
             </p>
           </div>
         </aside>
       </div>
 
       <div className="rounded-[28px] border border-apple-hairline bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <h3 className="text-lg font-bold text-apple-text">
-              Danh sách tài liệu
+              Kho tài liệu có thể tìm kiếm
             </h3>
             <p className="mt-1 text-sm text-apple-muted">
-              Metadata mẫu để sau này map với GET /api/documents.
+              Tạo link chia sẻ để người nhận mở xem hoặc tải file mà không cần
+              đăng nhập vào tài khoản của bạn.
             </p>
           </div>
 
-          <div className="flex flex-col-reverse items-end gap-3 sm:flex-row sm:items-center">
-            {}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="inline-flex rounded-full bg-apple-secondary p-1">
+              {VIEW_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+                    activeTab === tab.id
+                      ? "bg-white text-apple-primary shadow-sm"
+                      : "text-apple-muted hover:text-apple-text"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
             <input
               type="text"
-              placeholder="Tìm kiếm tên tệp..."
+              placeholder="Tìm tên, môn học, loại file..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full min-w-[240px] rounded-full border border-apple-hairline bg-[#F5F5F7] px-4 py-2 text-sm text-apple-text outline-none transition focus:border-apple-primary focus:bg-white focus:ring-2 focus:ring-[#0071E3]/20"
+              className="w-full min-w-[260px] rounded-full border border-apple-hairline bg-[#F5F5F7] px-4 py-2 text-sm text-apple-text outline-none transition focus:border-apple-primary focus:bg-white focus:ring-2 focus:ring-[#0071E3]/20"
             />
-            {/* Đổi documents.length thành filteredDocuments.length */}
-            <span className="whitespace-nowrap w-fit rounded-full bg-apple-secondary px-3 py-1 text-xs font-bold text-apple-muted">
-              {filteredDocuments.length} tệp
+            <span className="whitespace-nowrap rounded-full bg-apple-secondary px-3 py-1 text-xs font-bold text-apple-muted">
+              {visibleDocuments.length} tệp
             </span>
           </div>
         </div>
 
         <div className="mt-5 overflow-hidden rounded-3xl border border-apple-hairline">
-          <div className="hidden grid-cols-[1.35fr_0.95fr_0.55fr_0.65fr_0.85fr_0.8fr] gap-4 bg-apple-secondary px-4 py-3 text-xs font-bold uppercase tracking-wide text-apple-muted md:grid">
+          <div className="hidden grid-cols-[1.35fr_0.95fr_0.55fr_0.65fr_0.75fr_0.8fr] gap-4 bg-apple-secondary px-4 py-3 text-xs font-bold uppercase tracking-wide text-apple-muted md:grid">
             <span>Tên tệp</span>
-            <span>Môn / thư mục</span>
+            <span>Môn / chủ đề</span>
             <span>Loại</span>
             <span>Dung lượng</span>
-            <span>Trạng thái</span>
+            <span>Chế độ</span>
             <span className="text-right">Thao tác</span>
           </div>
           <div className="divide-y divide-apple-hairline">
-            {filteredDocuments.map((doc) => (
+            {visibleDocuments.map((doc) => (
               <article
                 key={doc.id}
-                className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1.35fr_0.95fr_0.55fr_0.65fr_0.85fr_0.8fr] md:items-center md:gap-4"
+                className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1.35fr_0.95fr_0.55fr_0.65fr_0.75fr_0.8fr] md:items-center md:gap-4"
               >
                 <div className="min-w-0">
                   <p className="truncate font-bold text-apple-text">
                     {doc.name}
                   </p>
-
                   <a
                     href={doc.s3Key}
                     target="_blank"
@@ -403,7 +463,6 @@ export default function DocumentManager() {
 
                 <div>
                   <p className="font-semibold text-apple-text">{doc.course}</p>
-
                   <p className="mt-1 text-xs text-apple-muted">{doc.folder}</p>
                 </div>
 
@@ -422,15 +481,16 @@ export default function DocumentManager() {
                   {doc.sizeLabel || `${doc.sizeMB} MB`}
                 </p>
 
-                <p className="mt-1 text-xs text-apple-muted">
-                  {doc.storageClass}
-                </p>
-
                 <div>
-                  <span className="inline-flex rounded-full bg-[#EAF7EA] px-3 py-1 text-xs font-bold text-apple-success">
-                    Đã tải lên
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
+                      isPublicDocument(doc)
+                        ? "bg-[#EAF7EA] text-apple-success"
+                        : "bg-[#FFF7E6] text-[#A45B00]"
+                    }`}
+                  >
+                    {isPublicDocument(doc) ? "Public" : "Private"}
                   </span>
-
                   <p className="mt-1 text-xs text-apple-muted">
                     {doc.uploadedAt}
                   </p>
@@ -446,6 +506,21 @@ export default function DocumentManager() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => handleCopyShareLink(doc)}
+                    className="rounded-full border border-apple-hairline bg-white px-3 py-1.5 text-xs font-bold text-apple-text transition hover:border-apple-primary hover:bg-[#EAF4FF]"
+                  >
+                    {copiedId === doc.id ? "Đã copy" : "Copy link"}
+                  </button>
+                  <a
+                    href={getShareLink(doc)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full border border-apple-hairline bg-white px-3 py-1.5 text-xs font-bold text-apple-text transition hover:border-apple-primary hover:bg-[#EAF4FF]"
+                  >
+                    Mở link
+                  </a>
+                  <button
+                    type="button"
                     onClick={() => handleDelete(doc)}
                     disabled={deletingId === doc.id}
                     className="rounded-full border border-[#FFD7D7] bg-white px-3 py-1.5 text-xs font-bold text-apple-error transition hover:bg-[#FFF2F2] disabled:cursor-not-allowed disabled:opacity-60"
@@ -455,10 +530,28 @@ export default function DocumentManager() {
                 </div>
               </article>
             ))}
+
+            {visibleDocuments.length === 0 && (
+              <div className="px-4 py-10 text-center text-sm text-apple-muted">
+                Chưa có tài liệu phù hợp. Hãy thử từ khóa khác hoặc đăng tài
+                liệu mới.
+              </div>
+            )}
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="rounded-3xl bg-apple-secondary px-5 py-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-apple-muted">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-bold text-apple-text">{value}</p>
+    </div>
   );
 }
 
